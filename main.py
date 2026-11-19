@@ -86,6 +86,10 @@ def refresh_tokens(request: RefreshRequest):
         "token_type": "bearer",
         "access_token_expires_in": request.access_token_expires_in,
         "refresh_token_expires_in": request.refresh_token_expires_in,
+        "refreshToken": [access_token ,refresh_token, "bearer", request.access_token_expires_in, request.refresh_token_expires_in ],
+        "RefreshToken": {"access_tokens": {"accessToken": access_token},
+                         "refreshInfo": {"refreshToken": refresh_token, "token_type": "bearer", "access_token_expires_in": request.access_token_expires_in, "refresh_token_expires_in":request.refresh_token_expires_in}
+                        }
     }
 
 
