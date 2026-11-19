@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Auth Server</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background:#11151b; color:#e8edf4; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:32px 18px; }
+    main { max-width:980px; margin:auto; }
+    h1 { margin:0 0 8px; font-size:28px; }
+    .sub, .muted { color:#9aa7b7; }
+    .panel { background:#1a222d; border:1px solid #2a3645; border-radius:12px; padding:20px; margin:18px 0; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+    label { display:block; font-size:13px; color:#b8c4d3; margin-bottom:7px; }
+    input { width:100%; padding:11px 12px; border-radius:8px; border:1px solid #39485b; background:#101720; color:#fff; }
+    button { border:0; border-radius:8px; padding:10px 14px; background:#5b8def; color:#08111e; font-weight:700; cursor:pointer; }
+    button.secondary { background:#35465b; color:#e8edf4; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .actions { display:flex; gap:9px; flex-wrap:wrap; margin-top:14px; }
+    .token { overflow-wrap:anywhere; background:#101720; border:1px solid #2b3949; border-radius:8px; padding:12px; font:12px/1.5 ui-monospace,monospace; min-height:54px; }
+    .token-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0 7px; }
+    .token-head strong { font-size:14px; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#101720; padding:14px; border-radius:8px; border:1px solid #2b3949; min-height:50px; }
+    .status { font-weight:700; }
+    .note { font-size:13px; color:#e5bd72; line-height:1.5; }
+    @media(max-width:560px) { body { padding:22px 12px; } .panel { padding:15px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Mock Authentication Server</h1>
+  <p class="sub">Generate tokens and exercise common authentication flows.</p>
+
+  <section class="panel">
+    <h2>Token configuration</h2>
+    <div class="grid">
+      <div><label for="accessExpiry">Access token expiry (seconds)</label><input id="accessExpiry" type="number" min="1" max="31536000" value="60"></div>
+      <div><label for="refreshExpiry">Refresh token expiry (seconds)</label><input id="refreshExpiry" type="number" min="1" max="31536000" value="604800"></div>
+    </div>
+    <div class="actions"><button id="generateBtn">Generate token pair</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>Generated tokens</h2>
+    <div class="token-head"><strong>Access token</strong><button class="secondary" id="copyAccess">Copy</button></div>
+    <div class="token" id="accessToken">No access token generated.</div>
+    <div class="muted" id="accessCountdown"></div>
+    <div class="token-head"><strong>Refresh token</strong><button class="secondary" id="copyRefresh">Copy</button></div>
+    <div class="token" id="refreshToken">No refresh token generated.</div>
+    <div class="muted" id="refreshCountdown"></div>
+    <p class="note">This is stateless rotation for mock testing: refreshing returns a new pair, but previously issued refresh tokens remain valid until they expire.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Test protected endpoint</h2>
+    <p class="muted">Sends GET /access using the current access token.</p>
+    <div class="actions"><button id="testAccessBtn">Call /access</button></div>
+    <pre id="accessResponse">Response will appear here.</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Refresh tokens</h2>
+    <p class="muted">Sends the current refresh token to POST /refresh. A new access token and refresh token will replace the current pair.</p>
+    <div class="actions"><button id="refreshBtn">Call /refresh</button></div>
+    <pre id="refreshResponse">Response will appear here.</pre>
+  </section>
+</main>
+<script>
+  let accessToken = "";
+  let refreshToken = "";
+  let accessExpiresAt = 0;
+  let refreshExpiresAt = 0;
+
+  const $ = id => document.getElementById(id);
+  const readExpiries = () => ({
+    access_token_expires_in: Number($("accessExpiry").value),
+    refresh_token_expires_in: Number($("refreshExpiry").value)
+  });
+  function validateExpiries(values) {
+    for (const [key, value] of Object.entries(values)) {
+      if (!Number.isInteger(value) || value < 1 || value > 31536000) {
+        throw new Error(`${key.replaceAll("_", " ")} must be an integer from 1 to 31536000 seconds.`);
+      }
+    }
+  }
+  function showTokens(data) {
+    accessToken = data.access_token;
+    refreshToken = data.refresh_token;
+    accessExpiresAt = Date.now() + data.access_token_expires_in * 1000;
+    refreshExpiresAt = Date.now() + data.refresh_token_expires_in * 1000;
+    $("accessToken").textContent = accessToken;
+    $("refreshToken").textContent = refreshToken;
+    updateCountdowns();
+  }
+  function countdown(target, expiry) {
+    if (!expiry) return "Not generated";
+    const remaining = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
+    return remaining ? `Expires in ${remaining} second(s)` : "Expired";
+  }
+  function updateCountdowns() {
+    $("accessCountdown").textContent = countdown("accessCountdown", accessExpiresAt);
+    $("refreshCountdown").textContent = countdown("refreshCountdown", refreshExpiresAt);
+  }
+  async function request(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({ detail: "Response was not JSON" }));
+    return { status: response.status, data };
+  }
+  $("generateBtn").addEventListener("click", async () => {
+    try {
+      const expiries = readExpiries(); validateExpiries(expiries);
+      const result = await request("/token", {
+        method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(expiries)
+      });
+      $("refreshResponse").textContent = JSON.stringify(result.data, null, 2);
+      if (result.status >= 200 && result.status < 300) showTokens(result.data);
+    } catch (e) { $("refreshResponse").textContent = e.message; }
+  });
+  $("copyAccess").addEventListener("click", async () => { if (accessToken) await navigator.clipboard.writeText(accessToken); });
+  $("copyRefresh").addEventListener("click", async () => { if (refreshToken) await navigator.clipboard.writeText(refreshToken); });
+  $("testAccessBtn").addEventListener("click", async () => {
+    const result = await request("/access", { headers: { Authorization: `Bearer ${accessToken}` } });
+    $("accessResponse").textContent = `HTTP ${result.status}\n${JSON.stringify(result.data, null, 2)}`;
+  });
+  $("refreshBtn").addEventListener("click", async () => {
+    if (!refreshToken) { $("refreshResponse").textContent = "Generate a token pair first."; return; }
+    try {
+      const expiries = readExpiries(); validateExpiries(expiries);
+      const result = await request("/refresh", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ refresh_token: refreshToken, ...expiries })
+      });
+      $("refreshResponse").textContent = `HTTP ${result.status}\n${JSON.stringify(result.data, null, 2)}`;
+      if (result.status >= 200 && result.status < 300) showTokens(result.data);
+    } catch (e) { $("refreshResponse").textContent = e.message; }
+  });
+  setInterval(updateCountdowns, 1000);
+</script>
+</body>
+</html>
