@@ -25,6 +25,7 @@
     pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#101720; padding:14px; border-radius:8px; border:1px solid #2b3949; min-height:50px; }
     .status { font-weight:700; }
     .note { font-size:13px; color:#e5bd72; line-height:1.5; }
+    .help { font-size:12px; color:#9aa7b7; margin-top:6px; }
     @media(max-width:560px) { body { padding:22px 12px; } .panel { padding:15px; } }
   </style>
 </head>
@@ -66,12 +67,37 @@
     <div class="actions"><button id="refreshBtn">Call /refresh</button></div>
     <pre id="refreshResponse">Response will appear here.</pre>
   </section>
+
+  <section class="panel">
+    <h2>API key configuration</h2>
+    <p class="muted">Generate a test API key for integrations that authenticate using an X-API-Key header.</p>
+    <div class="grid">
+      <div>
+        <label for="apiKeyExpiry">API key expiry (seconds)</label>
+        <input id="apiKeyExpiry" type="number" min="0" max="31536000" value="3600">
+        <div class="help">Enter 0 for a key that never expires.</div>
+      </div>
+    </div>
+    <div class="actions"><button id="generateApiKeyBtn">Generate API key</button></div>
+    <div class="token-head"><strong>Generated API key</strong><button class="secondary" id="copyApiKey">Copy</button></div>
+    <div class="token" id="apiKeyValue">No API key generated.</div>
+    <div class="muted" id="apiKeyCountdown"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Test API key authentication</h2>
+    <p class="muted">Sends GET /api-key/protected using the X-API-Key header.</p>
+    <div class="actions"><button id="testApiKeyBtn">Call /api-key/protected</button></div>
+    <pre id="apiKeyResponse">Response will appear here.</pre>
+  </section>
 </main>
 <script>
   let accessToken = "";
   let refreshToken = "";
   let accessExpiresAt = 0;
   let refreshExpiresAt = 0;
+  let apiKey = "";
+  let apiKeyExpiresAt = 0;
 
   const $ = id => document.getElementById(id);
   const readExpiries = () => ({
@@ -102,6 +128,7 @@
   function updateCountdowns() {
     $("accessCountdown").textContent = countdown("accessCountdown", accessExpiresAt);
     $("refreshCountdown").textContent = countdown("refreshCountdown", refreshExpiresAt);
+    $("apiKeyCountdown").textContent = apiKey ? (apiKeyExpiresAt ? countdown("apiKeyCountdown", apiKeyExpiresAt) : "Never expires") : "";
   }
   async function request(url, options = {}) {
     const response = await fetch(url, options);
@@ -120,6 +147,29 @@
   });
   $("copyAccess").addEventListener("click", async () => { if (accessToken) await navigator.clipboard.writeText(accessToken); });
   $("copyRefresh").addEventListener("click", async () => { if (refreshToken) await navigator.clipboard.writeText(refreshToken); });
+  $("generateApiKeyBtn").addEventListener("click", async () => {
+    const expiresIn = Number($("apiKeyExpiry").value);
+    if (!Number.isInteger(expiresIn) || expiresIn < 0 || expiresIn > 31536000) {
+      $("apiKeyResponse").textContent = "API key expiry must be 0 (never) or an integer up to 31536000 seconds.";
+      return;
+    }
+    const result = await request("/api-key", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({expires_in: expiresIn})
+    });
+    $("apiKeyResponse").textContent = `HTTP ${result.status}\n${JSON.stringify(result.data, null, 2)}`;
+    if (result.status >= 200 && result.status < 300) {
+      apiKey = result.data.api_key;
+      apiKeyExpiresAt = result.data.expires_at ? Date.parse(result.data.expires_at) : 0;
+      $("apiKeyValue").textContent = apiKey;
+      updateCountdowns();
+    }
+  });
+  $("copyApiKey").addEventListener("click", async () => { if (apiKey) await navigator.clipboard.writeText(apiKey); });
+  $("testApiKeyBtn").addEventListener("click", async () => {
+    const result = await request("/api-key/protected", { headers: apiKey ? {"X-API-Key": apiKey} : {} });
+    $("apiKeyResponse").textContent = `HTTP ${result.status}\n${JSON.stringify(result.data, null, 2)}`;
+  });
   $("testAccessBtn").addEventListener("click", async () => {
     const result = await request("/access", { headers: { Authorization: `Bearer ${accessToken}` } });
     $("accessResponse").textContent = `HTTP ${result.status}\n${JSON.stringify(result.data, null, 2)}`;
