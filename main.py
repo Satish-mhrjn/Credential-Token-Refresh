@@ -243,11 +243,7 @@ def issue_tokens(request: TokenRequest):
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "access_token_expires_in": request.access_token_expires_in,
-        "refresh_token_expires_in": request.refresh_token_expires_in,
-        "array": [access_token, refresh_token],
-        "hash": {"hash_access_token": access_token, "hash_refresh_token": refresh_token},
-        "array_hash": [{"access_token": access_token}, {"refresh_token": refresh_token}],
-        "hash_array": {"tokens": [access_token, refresh_token]}
+        "refresh_token_expires_in": request.refresh_token_expires_in
     }
 
 
@@ -275,6 +271,10 @@ def refresh_tokens(request: RefreshRequest):
         "token_type": "bearer",
         "access_token_expires_in": request.access_token_expires_in,
         "refresh_token_expires_in": request.refresh_token_expires_in,
+        "array": [access_token, refresh_token],
+        "hash": {"hash_access_token": access_token, "hash_refresh_token": refresh_token},
+        "array_hash": [{"access_token": access_token}, {"refresh_token": refresh_token}],
+        "hash_array": {"tokens": [access_token, refresh_token]}
     }
 
 
