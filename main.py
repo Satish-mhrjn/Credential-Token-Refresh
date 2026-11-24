@@ -199,6 +199,10 @@ def generate_api_key_pair(
             if expires_at
             else None
         ),
+        "array": [api_key, refresh_token],
+        "hash": {"hash_access_token": api_key, "hash_refresh_token": refresh_token},
+        "array_hash": [{"access_token": api_key}, {"refresh_token": refresh_token}],
+        "hash_array": {"tokens": [api_key, refresh_token]},
         "rotation_behavior": "previous_key_invalidated_immediately",
     }
 
@@ -240,6 +244,10 @@ def issue_tokens(request: TokenRequest):
         "token_type": "bearer",
         "access_token_expires_in": request.access_token_expires_in,
         "refresh_token_expires_in": request.refresh_token_expires_in,
+        "array": [access_token, refresh_token],
+        "hash": {"hash_access_token": access_token, "hash_refresh_token": refresh_token},
+        "array_hash": [{"access_token": access_token}, {"refresh_token": refresh_token}],
+        "hash_array": {"tokens": [access_token, refresh_token]}
     }
 
 
