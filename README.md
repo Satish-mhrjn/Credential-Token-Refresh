@@ -1,6 +1,6 @@
 # Mock Authentication Server
 
-A lightweight FastAPI mock authentication server with a plain HTML/CSS/JavaScript UI. It supports JWT bearer tokens and signed API keys without requiring a database or Redis.
+A lightweight FastAPI mock authentication server with a plain HTML/CSS/JavaScript UI. It supports JWT bearer tokens and generated API keys without a database, Redis, or other external infrastructure.
 
 ## Endpoints
 
@@ -9,8 +9,8 @@ A lightweight FastAPI mock authentication server with a plain HTML/CSS/JavaScrip
 | `POST` | `/token` | Issue an access token and refresh token | None |
 | `POST` | `/refresh` | Validate a refresh token and issue a new token pair | Refresh token in JSON body |
 | `GET` | `/access` | Protected resource for bearer-token testing | `Authorization: Bearer <access-token>` |
-| `POST` | `/api-key` | Generate a signed API key | None |
-| `GET` | `/api-key/protected` | Protected resource for API-key testing | `X-API-Key: <api-key>` |
+| `POST` | `/api-key` | Generate or rotate the active API key | None |
+| `GET` | `/api-key/protected` | Protected resource for API-key testing | Configured API-key header |
 | `GET` | `/health` | Health check | None |
 | `GET` | `/docs` | Interactive API documentation | None |
 
@@ -32,20 +32,27 @@ Example request:
 
 ## API key behavior
 
-`POST /api-key` accepts `expires_in` in seconds. The default is 3600 seconds. Set it to `0` for a key that never expires. The endpoint returns the key, header name, expiry duration, and expiry timestamp (or `null` for no expiry).
+- The server generates the API key; the client does not choose its value.
+- You can configure the HTTP header name (default: `X-API-Key`). Header names are case-insensitive and must be valid HTTP token characters.
+- `expires_in` is measured in seconds. The default is 3600. Set it to `0` for a key that does not expire.
+- Only one API key is active at a time. Generating another key immediately replaces the previous key; there is no grace period or manual revocation endpoint.
+- The API key is random and its SHA-256 digest is kept in process memory. The raw key is returned only when generated.
 
 Example request:
 
 ```json
-{ "expires_in": 3600 }
+{
+  "expires_in": 3600,
+  "header_name": "X-Client-Key"
+}
 ```
 
 Example response shape:
 
 ```json
 {
-  "api_key": "sk_test_<signed-value>",
-  "header_name": "X-API-Key",
+  "api_key": "sk_test_<random-value>",
+  "header_name": "X-Client-Key",
   "expires_in": 3600,
   "expires_at": "<UTC timestamp>"
 }
@@ -55,10 +62,14 @@ Use the generated key like this:
 
 ```http
 GET /api-key/protected
-X-API-Key: sk_test_<signed-value>
+X-Client-Key: sk_test_<random-value>
 ```
 
-A missing, malformed, tampered, or expired key returns `401 Unauthorized`. Keys are signed using `JWT_SECRET`, so they can be validated without storing them in a database. Consequently, they cannot be individually revoked before expiry. Changing `JWT_SECRET` invalidates all previously issued JWTs and API keys.
+A missing, incorrect, or expired key returns `401 Unauthorized`. A new key invalidates the previous key immediately.
+
+### In-memory limitation
+
+The active API key is stored only in the running Python process. Restarting the server clears it, so generate a new key after a restart. This is reliable for local testing with one server process. It is not reliable on Vercel/serverless or multi-worker deployments: requests may reach different instances, and each instance can have separate or reset memory. No persistence or cross-instance synchronization is provided by this project.
 
 ## Run locally (Windows PowerShell)
 
@@ -85,5 +96,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 2. Import the repository into Vercel.
 3. Add `JWT_SECRET` in the Vercel project settings. Use a long, random secret and keep it private.
 4. Deploy. The FastAPI application is exposed as `app` in `main.py`.
+
+The JWT endpoints are stateless and are suitable for serverless execution. The in-memory API-key lifecycle is not reliable across serverless instances; use the API-key feature locally or on a single persistent process if you need consistent rotation and validation.
 
 Do not use the example local secret in a public deployment.
